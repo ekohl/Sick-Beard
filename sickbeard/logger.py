@@ -28,6 +28,9 @@ import sickbeard
 from sickbeard import classes
 
 
+# Filename of the log
+LOG_FILE='sickbeard.log'
+
 # number of log files to keep
 NUM_LOGS = 3
 
@@ -44,136 +47,39 @@ reverseNames = {u'ERROR': ERROR,
                 u'INFO': MESSAGE,
                 u'DEBUG': DEBUG}
 
-class SBRotatingLogHandler(object):
 
-    def __init__(self, log_file, num_files, num_bytes):
-        self.num_files = num_files
-        self.num_bytes = num_bytes
-        
-        self.log_file = log_file
-        self.cur_handler = None
+class UILoggingHandler(logging.Handler):
+    def emit(self, record):
+        classes.ErrorViewer.add(classes.UIError(record.message))
 
-        self.writes_since_check = 0
+# Set up the logger
+logger = logging.getLogger('sickbeard')
+logger.setLevel(logging.DEBUG)
 
-        self.log_lock = threading.Lock()
+# Add errors to the UI logger
+ui_handler = UILoggingHandler()
+ui_handler.setLevel(logging.ERROR)
+logger.addHandler(ui_handler)
 
-    def initLogging(self, consoleLogging=True):
-    
-        self.log_file = os.path.join(sickbeard.LOG_DIR, self.log_file)
-    
-        self.cur_handler = self._config_handler()
-    
-        logging.getLogger('sickbeard').addHandler(self.cur_handler)
-    
-        # define a Handler which writes INFO messages or higher to the sys.stderr
-        if consoleLogging:
-            console = logging.StreamHandler()
-    
-            console.setLevel(logging.INFO)
-    
-            # set a format which is simpler for console use
-            console.setFormatter(logging.Formatter('%(asctime)s %(levelname)s::%(message)s', '%H:%M:%S'))
-    
-            # add the handler to the root logger
-            logging.getLogger('sickbeard').addHandler(console)
-    
-        logging.getLogger('sickbeard').setLevel(logging.DEBUG)
+# Set up a RotatingFileHandler
+log_file = os.path.join(sickbeard.LOG_DIR, LOG_FILE)
+rotating_handler = logging.handlers.RotatingFileHandler(log_file
+        maxBytes=LOG_SIZE, backupCount=NUM_LOGS)
+rotating_handler.setLevel(logging.DEBUG)
+rotating_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', '%b-%d %H:%M:%S'))
+logger.addHandler(rotating_handler)
 
-    def _config_handler(self):
-        """
-        Configure a file handler to log at file_name and return it.
-        """
-    
-        file_handler = logging.FileHandler(self.log_file)
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', '%b-%d %H:%M:%S'))
-        return file_handler
+# define a Handler which writes INFO messages or higher to the sys.stderr
+if consoleLogging:
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
 
-    def _log_file_name(self, i):
-        """
-        Returns a numbered log file name depending on i. If i==0 it just uses logName, if not it appends
-        it to the extension (blah.log.3 for i == 3)
-        
-        i: Log number to ues
-        """
-        return self.log_file + ('.' + str(i) if i else '')
-    
-    def _num_logs(self):
-        """
-        Scans the log folder and figures out how many log files there are already on disk
-        
-        Returns: The number of the last used file (eg. mylog.log.3 would return 3). If there are no logs it returns -1
-        """
-        cur_log = 0
-        while os.path.isfile(self._log_file_name(cur_log)):
-            cur_log += 1
-        return cur_log - 1
-    
-    def _rotate_logs(self):
-        
-        sb_logger = logging.getLogger('sickbeard')
-        
-        # delete the old handler
-        if self.cur_handler:
-            self.cur_handler.flush()
-            self.cur_handler.close()
-            sb_logger.removeHandler(self.cur_handler)
-    
-        # rename or delete all the old log files
-        for i in range(self._num_logs(), -1, -1):
-            cur_file_name = self._log_file_name(i)
-            try:
-                if i >= NUM_LOGS:
-                    os.remove(cur_file_name)
-                else:
-                    os.rename(cur_file_name, self._log_file_name(i+1))
-            except WindowsError:
-                pass
-        
-        # the new log handler will always be on the un-numbered .log file
-        new_file_handler = self._config_handler()
-        
-        self.cur_handler = new_file_handler
-        
-        sb_logger.addHandler(new_file_handler)
+    # set a format which is simpler for console use
+    console.setFormatter(logging.Formatter('%(asctime)s %(levelname)s::%(message)s', '%H:%M:%S'))
 
-    def log(self, toLog, logLevel=MESSAGE):
-    
-        with self.log_lock:
-    
-            # check the size and see if we need to rotate
-            if self.writes_since_check >= 10:
-                if os.path.isfile(self.log_file) and os.path.getsize(self.log_file) >= LOG_SIZE:
-                    self._rotate_logs()
-                self.writes_since_check = 0
-            else:
-                self.writes_since_check += 1
-    
-            meThread = threading.currentThread().getName()
-            message = meThread + u" :: " + toLog
-        
-            out_line = message.encode('utf-8')
-        
-            sb_logger = logging.getLogger('sickbeard')
-    
-            try:
-                if logLevel == DEBUG:
-                    sb_logger.debug(out_line)
-                elif logLevel == MESSAGE:
-                    sb_logger.info(out_line)
-                elif logLevel == WARNING:
-                    sb_logger.warning(out_line)
-                elif logLevel == ERROR:
-                    sb_logger.error(out_line)
-            
-                    # add errors to the UI logger
-                    classes.ErrorViewer.add(classes.UIError(message))
-                else:
-                    sb_logger.log(logLevel, out_line)
-            except ValueError:
-                pass
+    # add the handler to the root logger
+    logger.addHandler(console)
 
-sb_log_instance = SBRotatingLogHandler('sickbeard.log', NUM_LOGS, LOG_SIZE)
 
 def log(toLog, logLevel=MESSAGE):
-    sb_log_instance.log(toLog, logLevel)
+    logger.log(toLog, logLevel)
