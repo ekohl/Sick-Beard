@@ -26,6 +26,7 @@ import re
 import threading
 import datetime
 import random
+import socket
 
 from Cheetah.Template import Template
 import cherrypy.lib
@@ -70,10 +71,13 @@ class PageTemplate (Template):
         self.sbHttpPort = sickbeard.WEB_PORT
         self.sbHttpsPort = sickbeard.WEB_PORT
         self.sbHttpsEnabled = sickbeard.ENABLE_HTTPS
-        if cherrypy.request.headers['Host'][0] == '[':
-            self.sbHost = re.match("^\[.*\]", cherrypy.request.headers['Host'], re.X|re.M|re.S).group(0)
+        if 'Host' in cherrypy.request.headers:
+            if cherrypy.request.headers['Host'][0] == '[':
+                self.sbHost = re.match("^\[.*\]", cherrypy.request.headers['Host'], re.X|re.M|re.S).group(0)
+            else:
+                self.sbHost = re.match("^[^:]+", cherrypy.request.headers['Host'], re.X|re.M|re.S).group(0)
         else:
-            self.sbHost = re.match("^[^:]+", cherrypy.request.headers['Host'], re.X|re.M|re.S).group(0)
+            self.sbHost = socket.gethostname()
         self.projectHomePage = "http://code.google.com/p/sickbeard/"
 
         if "X-Forwarded-Host" in cherrypy.request.headers:
